@@ -41,20 +41,39 @@ Be fair — do not favor Analyst A or Analyst B. Base confidence on the strength
 
 /**
  * Formats the debate history into a user message for the judge.
+ *
+ * Multi-round debates are **sequential exchanges**, not the same “initial” copied: each round is
+ * a new three-turn cycle (A opens → B critiques → A rebuts). Numbering turns across rounds avoids
+ * ambiguous repeated headings like “Analyst A (initial)” on every block.
  */
 export function formatDebateForJudge(question: string, rounds: Round[]): string {
-  const parts: string[] = [`## Question\n${question.trim()}`];
+  const total = rounds.length;
+  const lines: string[] = [
+    "## Question",
+    question.trim(),
+    "",
+    "## How to read this transcript",
+    total === 0
+      ? "No rounds were completed."
+      : `There ${total === 1 ? "is" : "are"} **${total}** round(s). Each round is one full exchange: Analyst A **opens that round**, Analyst B **critiques**, Analyst A **rebuts**. Round 2+ are new cycles on the same topic (they may build on earlier rounds), not repetitions of round 1.`,
+    "",
+    "## Transcript (chronological)",
+    "",
+  ];
 
+  let turn = 1;
   for (const round of rounds) {
-    parts.push(
-      `## Round ${round.roundNumber}
-**Analyst A (initial):** ${round.initial.content.trim()}
-**Analyst B (critique):** ${round.critique.content.trim()}
-**Analyst A (rebuttal):** ${round.rebuttal.content.trim()}`
+    const r = round.roundNumber;
+    lines.push(`### Round ${r} of ${total}`);
+    lines.push(
+      `**Turn ${turn++} — Analyst A opens round ${r}:** ${round.initial.content.trim()}`
     );
+    lines.push(`**Turn ${turn++} — Analyst B (critique):** ${round.critique.content.trim()}`);
+    lines.push(`**Turn ${turn++} — Analyst A (rebuttal):** ${round.rebuttal.content.trim()}`);
+    lines.push("");
   }
 
-  return parts.join("\n\n");
+  return lines.join("\n").trimEnd();
 }
 
 /**

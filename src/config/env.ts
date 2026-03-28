@@ -3,8 +3,13 @@ import { ApiKeyMissingError } from "../types/errors.js";
 export interface EnvConfig {
   anthropicApiKey: string;
   openaiApiKey: string;
-  /** Optional; use empty string for local judges (e.g. Ollama) that do not need a key. */
+  /** Optional; use empty for local OpenAI-compatible judges that accept a dummy key. */
   judgeApiKey: string;
+  /**
+   * When set (e.g. `http://localhost:11434/v1` for Ollama), the judge uses the OpenAI-compatible
+   * chat completions API at this base URL instead of Anthropic or api.openai.com.
+   */
+  judgeBaseUrl: string;
   defaultAnthropicModel: string;
   defaultOpenaiModel: string;
   defaultJudgeModel: string;
@@ -54,6 +59,7 @@ export function loadEnvConfig(): EnvConfig {
     anthropicApiKey: readRequired("ANTHROPIC_API_KEY"),
     openaiApiKey: readRequired("OPENAI_API_KEY"),
     judgeApiKey: readOptional("DISSENT_JUDGE_API_KEY", ""),
+    judgeBaseUrl: readOptional("DISSENT_JUDGE_BASE_URL", ""),
     defaultAnthropicModel: readOptional(
       "DISSENT_ANTHROPIC_MODEL",
       "claude-sonnet-4-20250514"

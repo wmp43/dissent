@@ -46,6 +46,11 @@ For a production-style binary, run `npm run build` and point your MCP host at `d
 | `DISSENT_ANTHROPIC_MODEL` | No | Default: `claude-sonnet-4-20250514` |
 | `DISSENT_OPENAI_MODEL` | No | Default: `gpt-4o` |
 | `DISSENT_MAX_ROUNDS` | No | Upper bound for env-configured max rounds (clamped 1–4); default `4` |
+| `DISSENT_JUDGE_MODEL` | No | Model id for the judge; default `claude-sonnet-4-20250514` |
+| `DISSENT_JUDGE_BASE_URL` | No | If set (e.g. `http://localhost:11434/v1` for Ollama), judge uses this OpenAI-compatible endpoint |
+| `DISSENT_JUDGE_API_KEY` | No | Key for hosted OpenAI judge, or leave empty with `DISSENT_JUDGE_BASE_URL` (local servers often use a dummy key) |
+
+Judge selection: **OpenAI-compatible** when `DISSENT_JUDGE_BASE_URL` is set; else **OpenAI** when `DISSENT_JUDGE_API_KEY` is set; else **Anthropic** with `ANTHROPIC_API_KEY`.
 
 The MCP host (e.g. Claude Desktop, Cursor) typically injects these via `env`; you do not need `dotenv` in the server for normal use.
 

@@ -1,26 +1,65 @@
 import type { EnvConfig } from "../config/env.js";
-import { CritiqueInputSchema } from "../types/tools.js";
+import { CritiqueInputSchema, type CritiqueInput } from "../types/tools.js";
 import type { CritiqueResult } from "../types/debate.js";
+import { ValidationError } from "../types/errors.js";
 import { OpenAIClient } from "../clients/openai.js";
 import { makeCritiqueSystemPrompt } from "../engine/prompts.js";
 
-export async function handleCritique(_rawArgs: unknown, _config: EnvConfig): Promise<CritiqueResult> {
-  // TODO: Validate rawArgs with CritiqueInputSchema.safeParse().
-  //
-  // TODO: Instantiate OpenAIClient (use GPT as the critic — different vendor = better critique).
-  //
-  // TODO: Build the user message: the statement + optional context.
-  //
-  // TODO: Call client.complete() with makeCritiqueSystemPrompt() and the user message.
-  //
-  // TODO: Parse the JSON response. Same fallback strategy as synthesizer.
-  //   Fallback CritiqueResult:
-  //     { originalStatement: input.statement, critique: rawResponse, revisedVersion: "", keyChanges: [] }
-  //
-  // TODO: Return the CritiqueResult.
+function stripJsonFences(text: string): string {
+  return text.replace(/```json?\n?|```/g, "").trim();
+}
 
-  void CritiqueInputSchema;
-  void OpenAIClient;
-  void makeCritiqueSystemPrompt;
-  throw new Error("Not implemented");
+function parseCritiqueResponse(raw: string, input: CritiqueInput): CritiqueResult {
+  const fallback: CritiqueResult = {
+    originalStatement: input.statement,
+    critique: raw,
+    revisedVersion: "",
+    keyChanges: [],
+  };
+
+  const cleaned = stripJsonFences(raw);
+  try {
+    const parsed: unknown = JSON.parse(cleaned);
+    if (!parsed || typeof parsed !== "object") {
+      return fallback;
+    }
+    const o = parsed as Record<string, unknown>;
+    const critique = typeof o.critique === "string" ? o.critique : raw;
+    const revisedVersion = typeof o.revisedVersion === "string" ? o.revisedVersion : "";
+    const keyChanges = Array.isArray(o.keyChanges)
+      ? o.keyChanges.filter((x): x is string => typeof x === "string")
+      : [];
+
+    return {
+      originalStatement: input.statement,
+      critique,
+      revisedVersion,
+      keyChanges,
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function buildCritiqueUserMessage(input: CritiqueInput): string {
+  let text = `## Statement to critique\n${input.statement.trim()}`;
+  if (input.context?.trim()) {
+    text += `\n\n## Additional context\n${input.context.trim()}`;
+  }
+  return text;
+}
+
+export async function handleCritique(rawArgs: unknown, config: EnvConfig): Promise<CritiqueResult> {
+  const parsed = CritiqueInputSchema.safeParse(rawArgs);
+  if (!parsed.success) {
+    throw new ValidationError(parsed.error.issues.map((i) => i.message).join(", "));
+  }
+
+  const input = parsed.data;
+  const client = new OpenAIClient(config.openaiApiKey, config.defaultOpenaiModel);
+  const systemPrompt = makeCritiqueSystemPrompt();
+  const userMessage = buildCritiqueUserMessage(input);
+
+  const raw = await client.complete(systemPrompt, userMessage);
+  return parseCritiqueResponse(raw, input);
 }

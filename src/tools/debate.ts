@@ -1,28 +1,42 @@
 import type { EnvConfig } from "../config/env.js";
+import type { LlmClient } from "../clients/types.js";
 import { DebateInputSchema } from "../types/tools.js";
 import type { DebateResult } from "../types/debate.js";
+import { ValidationError } from "../types/errors.js";
 import { AnthropicClient } from "../clients/anthropic.js";
 import { OpenAIClient } from "../clients/openai.js";
 import { Orchestrator } from "../engine/orchestrator.js";
 
-export async function handleDebate(_rawArgs: unknown, _config: EnvConfig): Promise<DebateResult> {
-  // TODO: Validate rawArgs with DebateInputSchema.safeParse(rawArgs).
-  //   If not success, throw new ValidationError with the Zod error message.
-  //   Hint: result.error.issues.map(i => i.message).join(", ")
-  //
-  // TODO: Instantiate AnthropicClient and OpenAIClient from config.
-  //
-  // TODO: Decide who is the judge. Use Anthropic (Claude) as the judge.
-  //       Why? The synthesis is the most important step and Claude tends to follow
-  //       structured output instructions more reliably.
-  //
-  // TODO: Create an Orchestrator with (analystA=claude, analystB=gpt, judge=claude).
-  //
-  // TODO: Call orchestrator.runDebate(parsedInput) and return the result.
+/**
+ * Analyst A = Anthropic, Analyst B = OpenAI.
+ *
+ * Judge (first match wins):
+ * 1. `DISSENT_JUDGE_BASE_URL` — OpenAI-compatible API (Ollama, vLLM, LM Studio, etc.) + `DISSENT_JUDGE_MODEL`
+ * 2. `DISSENT_JUDGE_API_KEY` — hosted OpenAI API (`api.openai.com`) + `DISSENT_JUDGE_MODEL`
+ * 3. Else — Anthropic (`ANTHROPIC_API_KEY` + `DISSENT_JUDGE_MODEL`)
+ */
+function createJudgeClient(config: EnvConfig): LlmClient {
+  if (config.judgeBaseUrl.trim() !== "") {
+    return new OpenAIClient(config.judgeApiKey, config.defaultJudgeModel, {
+      baseURL: config.judgeBaseUrl.trim(),
+    });
+  }
+  if (config.judgeApiKey.trim() !== "") {
+    return new OpenAIClient(config.judgeApiKey, config.defaultJudgeModel);
+  }
+  return new AnthropicClient(config.anthropicApiKey, config.defaultJudgeModel);
+}
 
-  void DebateInputSchema;
-  void AnthropicClient;
-  void OpenAIClient;
-  void Orchestrator;
-  throw new Error("Not implemented");
+export async function handleDebate(rawArgs: unknown, config: EnvConfig): Promise<DebateResult> {
+  const parsed = DebateInputSchema.safeParse(rawArgs);
+  if (!parsed.success) {
+    throw new ValidationError(parsed.error.issues.map((i) => i.message).join(", "));
+  }
+
+  const analystA = new AnthropicClient(config.anthropicApiKey, config.defaultAnthropicModel);
+  const analystB = new OpenAIClient(config.openaiApiKey, config.defaultOpenaiModel);
+  const judge = createJudgeClient(config);
+
+  const orchestrator = new Orchestrator(analystA, analystB, judge);
+  return orchestrator.runDebate(parsed.data);
 }

@@ -1,51 +1,76 @@
 import { describe, it, expect, vi } from "vitest";
 import { Orchestrator } from "../../src/engine/orchestrator.js";
 import type { LlmClient } from "../../src/clients/types.js";
+import type { DebateInput } from "../../src/types/tools.js";
+import { ValidationError } from "../../src/types/errors.js";
 
-function makeMockClient(responses: string[]): LlmClient {
+function makeMockClient(responses: string[], model = "mock-model"): LlmClient {
   let callIndex = 0;
   return {
     provider: "mock",
-    model: "mock-model",
+    model,
     complete: vi.fn(async () => {
-      // TODO: Return responses[callIndex++].
-      // TODO: If callIndex exceeds responses.length, throw an error (unexpected call).
-      //
-      // Hint: This is a simple counter pattern. vi.fn() wraps it so vitest can assert on calls.
-      void responses;
-      void callIndex;
-      throw new Error("Not implemented");
+      if (callIndex >= responses.length) {
+        throw new Error(`Unexpected complete() call #${callIndex + 1}`);
+      }
+      return responses[callIndex++]!;
     }),
   };
 }
 
-describe("Orchestrator", () => {
-  it("should run a 1-round debate and return a DebateResult", async () => {
-    // TODO: Create mockA with 2 responses (initial + rebuttal).
-    // TODO: Create mockB with 1 response (critique).
-    // TODO: Create mockJudge with 1 response (JSON synthesis).
-    //
-    // TODO: Instantiate Orchestrator with (mockA, mockB, mockJudge).
-    // TODO: Call runDebate with a simple question, 1 round.
-    //
-    // TODO: Assert:
-    //   - result.rounds.length === 1
-    //   - result.rounds[0].initial.analystId === "A"
-    //   - result.rounds[0].critique.analystId === "B"
-    //   - result.synthesis exists
-    //   - mockA.complete was called 2 times
-    //   - mockB.complete was called 1 time
-    //   - mockJudge.complete was called 1 time
+const judgeJson = JSON.stringify({
+  synthesis: {
+    summary: "Both sides argued.",
+    recommendation: "Consider both views.",
+    confidence: "medium",
+  },
+  disagreements: ["On scope"],
+  consensusPoints: ["On facts"],
+});
 
-    throw new Error("Not implemented");
+describe("Orchestrator", () => {
+  it("runs a 1-round debate and returns a DebateResult", async () => {
+    const mockA = makeMockClient(["Initial from A.", "Rebuttal from A."]);
+    const mockB = makeMockClient(["Critique from B."]);
+    const mockJudge = makeMockClient([judgeJson], "judge-m");
+
+    const orchestrator = new Orchestrator(mockA, mockB, mockJudge);
+
+    const result = await orchestrator.runDebate({
+      question: "Is this question long enough to pass validation?",
+      rounds: 1,
+      mode: "adversarial",
+    });
+
+    expect(result.rounds.length).toBe(1);
+    expect(result.rounds[0]!.initial.analystId).toBe("A");
+    expect(result.rounds[0]!.critique.analystId).toBe("B");
+    expect(result.rounds[0]!.rebuttal.analystId).toBe("A");
+    expect(result.synthesis.summary).toBe("Both sides argued.");
+    expect(result.disagreements).toEqual(["On scope"]);
+    expect(result.consensusPoints).toEqual(["On facts"]);
+    expect(result.metadata.modelA).toBe("mock-model");
+    expect(result.metadata.modelB).toBe("mock-model");
+    expect(result.metadata.judgeModel).toBe("judge-m");
+
+    expect(mockA.complete).toHaveBeenCalledTimes(2);
+    expect(mockB.complete).toHaveBeenCalledTimes(1);
+    expect(mockJudge.complete).toHaveBeenCalledTimes(1);
   });
 
-  it("should throw ValidationError if rounds > 4", async () => {
-    // TODO: Create mocks (won't be called).
-    // TODO: Expect orchestrator.runDebate({ ..., rounds: 5 }) to reject with ValidationError.
-    //
-    // Hint: await expect(promise).rejects.toThrow(ValidationError)
+  it("throws ValidationError when rounds > 4", async () => {
+    const mockA = makeMockClient([]);
+    const mockB = makeMockClient([]);
+    const mockJudge = makeMockClient([]);
+    const orchestrator = new Orchestrator(mockA, mockB, mockJudge);
 
-    throw new Error("Not implemented");
+    const bad = {
+      question: "Is this question long enough to pass validation?",
+      rounds: 5,
+      mode: "adversarial" as const,
+    };
+
+    await expect(orchestrator.runDebate(bad as DebateInput)).rejects.toThrow(ValidationError);
+    expect(mockA.complete).not.toHaveBeenCalled();
   });
 });
