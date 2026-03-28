@@ -1,87 +1,145 @@
 # Dissent
 
-TypeScript [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server that runs **structured adversarial debates** between two LLM vendors (Anthropic Claude and OpenAI GPT) on subjective or ambiguous questions, then produces a **neutral synthesis**. A separate tool runs a **cross-vendor critique** of a statement with a revised version.
+**Dissent** is a [Model Context Protocol](https://modelcontextprotocol.io/) (MCP) server written in TypeScript. It runs **multi-round, structured debates** between two LLM backends—**Anthropic (Claude)** as Analyst A and **OpenAI** as Analyst B—then asks a **judge** model to produce a neutral synthesis, disagreements, and consensus points. A second tool performs **one-shot critique** of a statement with a revised version.
 
-Models are referred to only as **Analyst A** and **Analyst B** in prompts so the judge is not biased by vendor names.
+Debates use **Analyst A / Analyst B** in prompts (not vendor names) so the judge is less likely to bias toward a particular provider.
 
-**Full specification:** [dissent.md](dissent.md) — directory layout, types, Zod schemas, stubs, config templates, tests, Claude Desktop wiring, and agent scaffolding rules.
+---
 
-### Scaffold status (strict-first)
+## Features
 
-The repo matches **dissent.md** as a **stub-first** codebase: types, Zod, errors, and config are real; function bodies throw `Not implemented` with TODO hints. **`npm run build`** and **`npm run lint`** succeed; **`npm run dev`** exits with “Not implemented” until you implement `src/index.ts` and dependencies. **`npm test`** fails on purpose until you replace test stubs (see dissent.md Section 19).
-
-Repo hygiene beyond the spec: [`.gitignore`](.gitignore), [`vitest.config.ts`](vitest.config.ts), and [`eslint.config.mjs`](eslint.config.mjs) (ESLint 9 flat config) plus dev deps `@eslint/js` and `typescript-eslint` so `npm run lint` works.
+- **`debate`** — Configurable rounds (1–4), adversarial or collaborative mode, optional context; returns a readable report plus full JSON.
+- **`critique`** — Cross-vendor critique via OpenAI with structured JSON (`critique`, `revisedVersion`, `keyChanges`).
+- **Judge flexibility** — Default Anthropic judge, hosted OpenAI judge via `DISSENT_JUDGE_API_KEY`, or any **OpenAI-compatible** API (e.g. Ollama, vLLM) via `DISSENT_JUDGE_BASE_URL`.
+- **Stdio transport** — Works with Claude Desktop, Cursor, and other MCP hosts that launch a subprocess and pass environment variables.
 
 ---
 
 ## Requirements
 
-- **Node.js** 20 or newer  
-- **npm**  
-- API keys: **Anthropic** and **OpenAI** (see environment variables below)
+- **Node.js** 20+
+- **npm**
+- **API keys** — `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` (used for the two analysts; the judge may use additional or alternate config—see below).
 
 ---
 
-## Quick start
-
-Implement bodies in the order given in **Section 20** of [dissent.md](dissent.md), then:
+## Install and build
 
 ```bash
+cd dissent
 npm install
-cp .env.example .env   # fill in real keys
 npm run build
-npm run dev              # runs src/index.ts via tsx (stdio MCP server)
 ```
 
-For a production-style binary, run `npm run build` and point your MCP host at `dist/index.js` (see [Claude Desktop](#claude-desktop)).
+Development run (stdio MCP on the current terminal):
+
+```bash
+npm run dev
+```
+
+Production-style entrypoint after build:
+
+```bash
+node dist/index.js
+```
+
+After `npm run build`, the `bin` field maps the `dissent` command to `dist/index.js` (useful with `npm link` or a global install).
 
 ---
 
-## Environment variables
+## Configuration
 
-| Variable | Required | Description |
-| -------- | -------- | ------------- |
-| `ANTHROPIC_API_KEY` | Yes | Anthropic API key |
-| `OPENAI_API_KEY` | Yes | OpenAI API key |
-| `DISSENT_ANTHROPIC_MODEL` | No | Default: `claude-sonnet-4-20250514` |
-| `DISSENT_OPENAI_MODEL` | No | Default: `gpt-4o` |
-| `DISSENT_MAX_ROUNDS` | No | Upper bound for env-configured max rounds (clamped 1–4); default `4` |
-| `DISSENT_JUDGE_MODEL` | No | Model id for the judge; default `claude-sonnet-4-20250514` |
-| `DISSENT_JUDGE_BASE_URL` | No | If set (e.g. `http://localhost:11434/v1` for Ollama), judge uses this OpenAI-compatible endpoint |
-| `DISSENT_JUDGE_API_KEY` | No | Key for hosted OpenAI judge, or leave empty with `DISSENT_JUDGE_BASE_URL` (local servers often use a dummy key) |
+Configuration is read from **`process.env`** only (no bundled `dotenv`). MCP hosts normally inject variables for the child process.
 
-Judge selection: **OpenAI-compatible** when `DISSENT_JUDGE_BASE_URL` is set; else **OpenAI** when `DISSENT_JUDGE_API_KEY` is set; else **Anthropic** with `ANTHROPIC_API_KEY`.
+### Required
 
-The MCP host (e.g. Claude Desktop, Cursor) typically injects these via `env`; you do not need `dotenv` in the server for normal use.
+| Variable | Purpose |
+| -------- | ------- |
+| `ANTHROPIC_API_KEY` | Analyst A (Claude) |
+| `OPENAI_API_KEY` | Analyst B (GPT) |
+
+### Optional
+
+| Variable | Default | Purpose |
+| -------- | ------- | ------- |
+| `DISSENT_ANTHROPIC_MODEL` | `claude-sonnet-4-20250514` | Model id for Analyst A |
+| `DISSENT_OPENAI_MODEL` | `gpt-4o` | Model id for Analyst B |
+| `DISSENT_JUDGE_MODEL` | `claude-sonnet-4-20250514` | Model id for the judge (whichever backend you select below) |
+| `DISSENT_MAX_ROUNDS` | `4` | Env-level cap (1–4); per-request `rounds` are also validated in the tool schema |
+| `DISSENT_JUDGE_BASE_URL` | _(empty)_ | If set (e.g. `http://localhost:11434/v1` for Ollama), the judge uses this OpenAI-compatible base URL |
+| `DISSENT_JUDGE_API_KEY` | _(empty)_ | If set (and no judge base URL), the judge uses the OpenAI API with this key; with only a local base URL, an internal placeholder key may be used |
+
+**Judge selection (first match wins):**
+
+1. **`DISSENT_JUDGE_BASE_URL` is set** → OpenAI-compatible client at that URL (good for local open-weights judges).
+2. **`DISSENT_JUDGE_API_KEY` is set** → OpenAI’s hosted API as judge.
+3. **Otherwise** → Anthropic (`ANTHROPIC_API_KEY`) as judge with `DISSENT_JUDGE_MODEL`.
 
 ---
 
 ## MCP tools
 
-| Tool | Purpose |
-| ---- | ------- |
-| `debate` | Run a multi-round debate (adversarial or collaborative), then structured synthesis |
-| `critique` | Critique a statement and return a revised version (JSON-shaped output) |
+| Tool | Description |
+| ---- | ----------- |
+| `debate` | `question` (required), optional `context`, `rounds` (1–4), `mode` (`adversarial` \| `collaborative`). Returns formatted text and embedded JSON. |
+| `critique` | `statement` (required), optional `context`. Returns critique + revised text + key changes. |
 
-Exact arguments and result shapes are defined in [dissent.md](dissent.md) (Zod schemas and domain types).
-
----
-
-## Scripts
-
-| Command | Description |
-| ------- | ----------- |
-| `npm run build` | Bundle with `tsup` to `dist/` |
-| `npm run dev` | Run `tsx src/index.ts` for local development |
-| `npm run lint` | ESLint on `src/` |
-| `npm run test` | Vitest once |
-| `npm run test:watch` | Vitest watch mode |
+Input and output shapes are defined in code with **Zod** (`src/types/tools.ts`) and domain types (`src/types/debate.ts`). For a full design write-up, see [dissent.md](dissent.md).
 
 ---
 
 ## Claude Desktop
 
-Add a server entry that runs Node against the built `dist/index.js` and passes `ANTHROPIC_API_KEY` and `OPENAI_API_KEY` in `env`. Copy the JSON snippet from **Section 18 (Claude Desktop config)** in [dissent.md](dissent.md) and replace the path with your absolute path to `dist/index.js`.
+Add a server block so Claude launches Node against your built server and passes secrets in `env` (never commit real keys).
+
+**macOS** — edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "dissent": {
+      "command": "node",
+      "args": ["/absolute/path/to/dissent/dist/index.js"],
+      "env": {
+        "ANTHROPIC_API_KEY": "your-key",
+        "OPENAI_API_KEY": "your-key"
+      }
+    }
+  }
+}
+```
+
+Use the **absolute** path to `dist/index.js`. Restart Claude fully (quit the app, not only the window) after changes.
+
+On **Windows**, the config path is typically `%AppData%\Claude\claude_desktop_config.json`.
+
+---
+
+## Project layout (overview)
+
+| Path | Role |
+| ---- | ---- |
+| `src/index.ts` | Stdio transport + `loadEnvConfig` + `createServer` |
+| `src/server.ts` | MCP `registerTool` for `debate` and `critique` |
+| `src/tools/` | Tool handlers, validation, client wiring |
+| `src/engine/` | Orchestrator, prompts, judge synthesis |
+| `src/clients/` | Anthropic and OpenAI (`LlmClient`) implementations |
+| `src/formatting/` | Human-readable tool output strings |
+| `tests/` | Vitest unit tests |
+
+---
+
+## Development
+
+| Command | Description |
+| ------- | ----------- |
+| `npm run build` | Bundle to `dist/` with `tsup` |
+| `npm run dev` | Run `src/index.ts` with `tsx` |
+| `npm run lint` | ESLint on `src/` |
+| `npm test` | Run Vitest once |
+| `npm run test:watch` | Vitest watch mode |
+
+Logging: for **stdio** MCP, use **`console.error`** for diagnostics only—**do not** `console.log` to stdout, or you will corrupt the JSON-RPC stream.
 
 ---
 
