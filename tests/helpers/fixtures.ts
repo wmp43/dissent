@@ -6,6 +6,7 @@ export function minimalEnv(overrides: Partial<EnvConfig> = {}): EnvConfig {
     anthropicApiKey: "sk-ant-test",
     openaiApiKey: "sk-openai-test",
     judgeApiKey: "",
+    judgeGeminiApiKey: "",
     judgeBaseUrl: "",
     defaultAnthropicModel: "claude-test",
     defaultOpenaiModel: "gpt-test",

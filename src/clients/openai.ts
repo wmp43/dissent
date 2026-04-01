@@ -5,6 +5,8 @@ import { ProviderError } from "../types/errors.js";
 export type OpenAIClientOptions = {
   /** e.g. `http://localhost:11434/v1` (Ollama), LM Studio, vLLM — OpenAI SDK chat completions shape */
   baseURL?: string;
+  /** Override `provider` metadata (e.g. `google-gemini` for Gemini’s OpenAI-compatible API) */
+  providerLabel?: string;
 };
 
 export class OpenAIClient implements LlmClient {
@@ -18,7 +20,12 @@ export class OpenAIClient implements LlmClient {
   constructor(apiKey: string, model: string, options?: OpenAIClientOptions) {
     this.model = model;
     const baseURL = options?.baseURL?.trim();
-    this.provider = baseURL ? "openai-compatible" : "openai";
+    const label = options?.providerLabel?.trim();
+    if (label) {
+      this.provider = label;
+    } else {
+      this.provider = baseURL ? "openai-compatible" : "openai";
+    }
 
     const trimmed = apiKey.trim();
     const key = trimmed !== "" ? trimmed : baseURL ? "ollama" : trimmed;

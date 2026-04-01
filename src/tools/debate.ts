@@ -1,4 +1,4 @@
-import type { EnvConfig } from "../config/env.js";
+import { GEMINI_OPENAI_COMPAT_BASE, type EnvConfig } from "../config/env.js";
 import type { LlmClient } from "../clients/types.js";
 import { DebateInputSchema } from "../types/tools.js";
 import type { DebateResult } from "../types/debate.js";
@@ -11,14 +11,21 @@ import { Orchestrator } from "../engine/orchestrator.js";
  * Analyst A = Anthropic, Analyst B = OpenAI.
  *
  * Judge (first match wins):
- * 1. `DISSENT_JUDGE_BASE_URL` — OpenAI-compatible API (Ollama, vLLM, LM Studio, etc.) + `DISSENT_JUDGE_MODEL`
- * 2. `DISSENT_JUDGE_API_KEY` — hosted OpenAI API (`api.openai.com`) + `DISSENT_JUDGE_MODEL`
- * 3. Else — Anthropic (`ANTHROPIC_API_KEY` + `DISSENT_JUDGE_MODEL`)
+ * 1. `DISSENT_JUDGE_BASE_URL` — OpenAI-compatible API (Ollama, vLLM, LM Studio, Gemini manual URL, etc.) + `DISSENT_JUDGE_MODEL`
+ * 2. `DISSENT_JUDGE_GEMINI_API_KEY` — Google Gemini via OpenAI-compatible endpoint + `DISSENT_JUDGE_MODEL` (default `gemini-2.5-flash` when unset)
+ * 3. `DISSENT_JUDGE_API_KEY` — hosted OpenAI API (`api.openai.com`) + `DISSENT_JUDGE_MODEL`
+ * 4. Else — Anthropic (`ANTHROPIC_API_KEY` + `DISSENT_JUDGE_MODEL`)
  */
 function createJudgeClient(config: EnvConfig): LlmClient {
   if (config.judgeBaseUrl.trim() !== "") {
     return new OpenAIClient(config.judgeApiKey, config.defaultJudgeModel, {
       baseURL: config.judgeBaseUrl.trim(),
+    });
+  }
+  if (config.judgeGeminiApiKey.trim() !== "") {
+    return new OpenAIClient(config.judgeGeminiApiKey, config.defaultJudgeModel, {
+      baseURL: GEMINI_OPENAI_COMPAT_BASE,
+      providerLabel: "google-gemini",
     });
   }
   if (config.judgeApiKey.trim() !== "") {

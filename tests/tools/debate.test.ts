@@ -4,9 +4,11 @@ import { ValidationError } from "../../src/types/errors.js";
 import { minimalEnv } from "../helpers/fixtures.js";
 
 const runDebateMock = vi.fn();
+let ctorArgs: unknown[] = [];
 
 vi.mock("../../src/engine/orchestrator.js", () => ({
-  Orchestrator: vi.fn(function MockOrchestrator() {
+  Orchestrator: vi.fn(function MockOrchestrator(...args: unknown[]) {
+    ctorArgs = args;
     return { runDebate: runDebateMock };
   }),
 }));
@@ -18,6 +20,7 @@ describe("handleDebate", () => {
   beforeEach(() => {
     runDebateMock.mockReset();
     vi.mocked(Orchestrator).mockClear();
+    ctorArgs = [];
   });
 
   it("throws ValidationError when args fail Zod validation", async () => {
@@ -64,5 +67,68 @@ describe("handleDebate", () => {
       })
     );
     expect(Orchestrator).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses Anthropic judge when no judge env override is set", async () => {
+    const fake: DebateResult = {
+      question: "Is this question long enough for the schema?",
+      mode: "adversarial",
+      rounds: [],
+      synthesis: { summary: "s", recommendation: "r", confidence: "low" },
+      disagreements: [],
+      consensusPoints: [],
+      metadata: { totalDurationMs: 1, modelA: "a", modelB: "b", judgeModel: "j" },
+    };
+    runDebateMock.mockResolvedValue(fake);
+
+    await handleDebate(
+      { question: "Is this question long enough for the schema?", rounds: 1, mode: "adversarial" },
+      minimalEnv()
+    );
+
+    const judge = ctorArgs[2] as { provider?: string } | undefined;
+    expect(judge?.provider).toBe("anthropic");
+  });
+
+  it("uses Google Gemini judge when judgeGeminiApiKey is set (and no base URL)", async () => {
+    const fake: DebateResult = {
+      question: "Is this question long enough for the schema?",
+      mode: "adversarial",
+      rounds: [],
+      synthesis: { summary: "s", recommendation: "r", confidence: "low" },
+      disagreements: [],
+      consensusPoints: [],
+      metadata: { totalDurationMs: 1, modelA: "a", modelB: "b", judgeModel: "j" },
+    };
+    runDebateMock.mockResolvedValue(fake);
+
+    await handleDebate(
+      { question: "Is this question long enough for the schema?", rounds: 1, mode: "adversarial" },
+      minimalEnv({ judgeGeminiApiKey: "gemini-test-key" })
+    );
+
+    const judge = ctorArgs[2] as { provider?: string } | undefined;
+    expect(judge?.provider).toBe("google-gemini");
+  });
+
+  it("uses OpenAI-compatible judge when judgeBaseUrl is set", async () => {
+    const fake: DebateResult = {
+      question: "Is this question long enough for the schema?",
+      mode: "adversarial",
+      rounds: [],
+      synthesis: { summary: "s", recommendation: "r", confidence: "low" },
+      disagreements: [],
+      consensusPoints: [],
+      metadata: { totalDurationMs: 1, modelA: "a", modelB: "b", judgeModel: "j" },
+    };
+    runDebateMock.mockResolvedValue(fake);
+
+    await handleDebate(
+      { question: "Is this question long enough for the schema?", rounds: 1, mode: "adversarial" },
+      minimalEnv({ judgeBaseUrl: "http://localhost:11434/v1" })
+    );
+
+    const judge = ctorArgs[2] as { provider?: string } | undefined;
+    expect(judge?.provider).toBe("openai-compatible");
   });
 });

@@ -49,6 +49,20 @@ describe("OpenAIClient", () => {
     expect(OpenAIConstructor).toHaveBeenCalledWith({ apiKey: "sk" });
   });
 
+  it("uses providerLabel when provided (e.g. Gemini)", async () => {
+    mockCreate.mockResolvedValue({
+      choices: [{ message: { content: "ok" } }],
+    });
+
+    const client = new OpenAIClient("gemini-key", "gemini-2.5-flash", {
+      baseURL: "https://generativelanguage.googleapis.com/v1beta/openai/",
+      providerLabel: "google-gemini",
+    });
+    await client.complete("s", "u");
+
+    expect(client.provider).toBe("google-gemini");
+  });
+
   it("passes baseURL for OpenAI-compatible (third-party) endpoints", async () => {
     mockCreate.mockResolvedValue({
       choices: [{ message: { content: "ok" } }],

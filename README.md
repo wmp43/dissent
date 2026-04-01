@@ -10,7 +10,7 @@ Debates use **Analyst A / Analyst B** in prompts (not vendor names) so the judge
 
 - **`debate`** — Configurable rounds (1–4), adversarial or collaborative mode, optional context; returns a readable report plus full JSON.
 - **`critique`** — Cross-vendor critique via OpenAI with structured JSON (`critique`, `revisedVersion`, `keyChanges`).
-- **Judge flexibility** — Default Anthropic judge, hosted OpenAI judge via `DISSENT_JUDGE_API_KEY`, or any **OpenAI-compatible** API (e.g. Ollama, vLLM) via `DISSENT_JUDGE_BASE_URL`.
+- **Judge flexibility** — Default Anthropic judge, **Google Gemini 2.5** (Pro or Flash) via `DISSENT_JUDGE_GEMINI_API_KEY`, hosted OpenAI via `DISSENT_JUDGE_API_KEY`, or any **OpenAI-compatible** API (e.g. Ollama, vLLM) via `DISSENT_JUDGE_BASE_URL`.
 - **Stdio transport** — Works with Claude Desktop, Cursor, and other MCP hosts that launch a subprocess and pass environment variables.
 
 ---
@@ -64,16 +64,23 @@ Configuration is read from **`process.env`** only (no bundled `dotenv`). MCP hos
 | -------- | ------- | ------- |
 | `DISSENT_ANTHROPIC_MODEL` | `claude-sonnet-4-20250514` | Model id for Analyst A |
 | `DISSENT_OPENAI_MODEL` | `gpt-4o` | Model id for Analyst B |
-| `DISSENT_JUDGE_MODEL` | `claude-sonnet-4-20250514` | Model id for the judge (whichever backend you select below) |
+| `DISSENT_JUDGE_MODEL` | See below | Model id for the judge (depends on which backend you select) |
 | `DISSENT_MAX_ROUNDS` | `4` | Env-level cap (1–4); per-request `rounds` are also validated in the tool schema |
 | `DISSENT_JUDGE_BASE_URL` | _(empty)_ | If set (e.g. `http://localhost:11434/v1` for Ollama), the judge uses this OpenAI-compatible base URL |
-| `DISSENT_JUDGE_API_KEY` | _(empty)_ | If set (and no judge base URL), the judge uses the OpenAI API with this key; with only a local base URL, an internal placeholder key may be used |
+| `DISSENT_JUDGE_GEMINI_API_KEY` | _(empty)_ | If set (and no judge base URL), the judge calls **Gemini** via Google’s [OpenAI-compatible endpoint](https://ai.google.dev/gemini-api/docs/openai) ([API key](https://aistudio.google.com/apikey)) |
+| `DISSENT_JUDGE_API_KEY` | _(empty)_ | If set (and no judge base URL or Gemini key), the judge uses the OpenAI API with this key; with only a local base URL, an internal placeholder key may be used |
+
+**Default `DISSENT_JUDGE_MODEL` when the variable is omitted**
+
+- No Gemini key → `claude-sonnet-4-20250514` (Anthropic judge default).
+- `DISSENT_JUDGE_GEMINI_API_KEY` set → `gemini-2.5-flash` (override with `DISSENT_JUDGE_MODEL`, e.g. `gemini-2.5-pro`).
 
 **Judge selection (first match wins):**
 
-1. **`DISSENT_JUDGE_BASE_URL` is set** → OpenAI-compatible client at that URL (good for local open-weights judges).
-2. **`DISSENT_JUDGE_API_KEY` is set** → OpenAI’s hosted API as judge.
-3. **Otherwise** → Anthropic (`ANTHROPIC_API_KEY`) as judge with `DISSENT_JUDGE_MODEL`.
+1. **`DISSENT_JUDGE_BASE_URL` is set** → OpenAI-compatible client at that URL (Ollama, vLLM, or e.g. `https://generativelanguage.googleapis.com/v1beta/openai/` for Gemini without the dedicated env var).
+2. **`DISSENT_JUDGE_GEMINI_API_KEY` is set** → Gemini as judge (`gemini-2.5-flash` or your `DISSENT_JUDGE_MODEL`).
+3. **`DISSENT_JUDGE_API_KEY` is set** → OpenAI’s hosted API as judge.
+4. **Otherwise** → Anthropic (`ANTHROPIC_API_KEY`) as judge.
 
 ---
 
@@ -138,6 +145,27 @@ On **Windows**, the config path is typically `%AppData%\Claude\claude_desktop_co
 | `npm run lint` | ESLint on `src/` |
 | `npm test` | Run Vitest once |
 | `npm run test:watch` | Vitest watch mode |
+
+### Optional live inference test
+
+By default, tests are mocked/offline and do not call Anthropic or OpenAI.
+
+To run an opt-in live verification path, set `RUN_LIVE_INFERENCE=1` and provide real keys:
+
+```bash
+ANTHROPIC_API_KEY=... OPENAI_API_KEY=... RUN_LIVE_INFERENCE=1 npm test -- tests/integration/live-inference.test.ts
+```
+
+PowerShell:
+
+```powershell
+$env:ANTHROPIC_API_KEY="..."
+$env:OPENAI_API_KEY="..."
+$env:RUN_LIVE_INFERENCE="1"
+npm test -- tests/integration/live-inference.test.ts
+```
+
+You can also set `DISSENT_JUDGE_BASE_URL` + `DISSENT_JUDGE_MODEL` to verify a third-party OpenAI-compatible judge.
 
 Logging: for **stdio** MCP, use **`console.error`** for diagnostics only—**do not** `console.log` to stdout, or you will corrupt the JSON-RPC stream.
 
