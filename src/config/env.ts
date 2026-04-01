@@ -1,4 +1,5 @@
 import { ApiKeyMissingError } from "../types/errors.js";
+import { isVerboseLlmEnv } from "../logging/llm-trace.js";
 
 /** Gemini (Google AI Studio) via the OpenAI-compatible REST surface. See https://ai.google.dev/gemini-api/docs/openai */
 export const GEMINI_OPENAI_COMPAT_BASE =
@@ -10,8 +11,9 @@ export interface EnvConfig {
   /** Optional; use empty for local OpenAI-compatible judges that accept a dummy key. */
   judgeApiKey: string;
   /**
-   * Optional [Gemini API key](https://aistudio.google.com/apikey). When set (and no custom judge base URL),
-   * the judge uses Gemini at `GEMINI_OPENAI_COMPAT_BASE` with `DISSENT_JUDGE_MODEL` (default `gemini-2.5-flash` if unset).
+   * When non-empty (from `DISSENT_JUDGE_GEMINI_API_KEY`, `GEMINI_API_KEY`, or `GOOGLE_CLOUD_API_KEY`), and no custom judge
+   * base URL, the default judge is **Gemini** at `GEMINI_OPENAI_COMPAT_BASE`. Model id: `DISSENT_JUDGE_MODEL`, else
+   * `DISSENT_GOOGLE_MODEL`, else `gemini-2.5-flash`.
    */
   judgeGeminiApiKey: string;
   /**
@@ -27,6 +29,11 @@ export interface EnvConfig {
    * Future: agreement-based stopping / unbounded rounds would need product + schema changes.
    */
   maxRounds: number;
+  /**
+   * When true, log each LLM call to **stderr**: step index vs total, role/model, then a short text preview after the call.
+   * Set `DISSENT_VERBOSE_LLM=1` (or `true` / `yes`). Safe for stdio MCP hosts (stdout stays JSON-RPC only).
+   */
+  verboseLlm: boolean;
 }
 
 function readRequired(key: "ANTHROPIC_API_KEY" | "OPENAI_API_KEY"): string {
@@ -61,21 +68,43 @@ function parseMaxRounds(raw: string | undefined): number {
 }
 
 function readDefaultJudgeModel(judgeGeminiKeyPresent: boolean): string {
-  const v = process.env.DISSENT_JUDGE_MODEL;
-  if (v !== undefined && v.trim() !== "") {
-    return v.trim();
+  const judgeModel = process.env.DISSENT_JUDGE_MODEL;
+  if (judgeModel !== undefined && judgeModel.trim() !== "") {
+    return judgeModel.trim();
   }
   if (judgeGeminiKeyPresent) {
+    const googleModel = process.env.DISSENT_GOOGLE_MODEL;
+    if (googleModel !== undefined && googleModel.trim() !== "") {
+      return googleModel.trim();
+    }
     return "gemini-2.5-flash";
   }
   return "claude-sonnet-4-20250514";
 }
 
 /**
+ * Gemini / Google AI keys for the judge (first non-empty wins).
+ * Supports common env names so a Google key is not mistaken for `DISSENT_JUDGE_API_KEY` (OpenAI).
+ */
+function readJudgeGeminiApiKey(): string {
+  for (const key of [
+    "DISSENT_JUDGE_GEMINI_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_CLOUD_API_KEY",
+  ] as const) {
+    const v = process.env[key];
+    if (v !== undefined && v.trim() !== "") {
+      return v.trim();
+    }
+  }
+  return "";
+}
+
+/**
  * Load config from `process.env` (no dotenv). MCP hosts inject env for stdio servers.
  */
 export function loadEnvConfig(): EnvConfig {
-  const judgeGeminiApiKey = readOptional("DISSENT_JUDGE_GEMINI_API_KEY", "");
+  const judgeGeminiApiKey = readJudgeGeminiApiKey();
   return {
     anthropicApiKey: readRequired("ANTHROPIC_API_KEY"),
     openaiApiKey: readRequired("OPENAI_API_KEY"),
@@ -89,5 +118,6 @@ export function loadEnvConfig(): EnvConfig {
     defaultOpenaiModel: readOptional("DISSENT_OPENAI_MODEL", "gpt-4o"),
     defaultJudgeModel: readDefaultJudgeModel(judgeGeminiApiKey.trim() !== ""),
     maxRounds: parseMaxRounds(process.env.DISSENT_MAX_ROUNDS),
+    verboseLlm: isVerboseLlmEnv(process.env.DISSENT_VERBOSE_LLM),
   };
 }

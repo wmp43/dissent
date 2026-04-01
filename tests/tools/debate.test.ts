@@ -90,6 +90,30 @@ describe("handleDebate", () => {
     expect(judge?.provider).toBe("anthropic");
   });
 
+  it("routes DISSENT_JUDGE_API_KEY to Gemini when the value is a Google AI key (AIza…)", async () => {
+    const fake: DebateResult = {
+      question: "Is this question long enough for the schema?",
+      mode: "adversarial",
+      rounds: [],
+      synthesis: { summary: "s", recommendation: "r", confidence: "low" },
+      disagreements: [],
+      consensusPoints: [],
+      metadata: { totalDurationMs: 1, modelA: "a", modelB: "b", judgeModel: "j" },
+    };
+    runDebateMock.mockResolvedValue(fake);
+
+    await handleDebate(
+      { question: "Is this question long enough for the schema?", rounds: 1, mode: "adversarial" },
+      minimalEnv({
+        judgeApiKey: "AIzaSyWrongSlotStillWorks",
+        judgeGeminiApiKey: "",
+      })
+    );
+
+    const judge = ctorArgs[2] as { provider?: string } | undefined;
+    expect(judge?.provider).toBe("google-gemini");
+  });
+
   it("uses Google Gemini judge when judgeGeminiApiKey is set (and no base URL)", async () => {
     const fake: DebateResult = {
       question: "Is this question long enough for the schema?",

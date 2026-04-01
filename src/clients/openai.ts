@@ -13,6 +13,11 @@ export class OpenAIClient implements LlmClient {
   readonly provider: string;
   readonly model: string;
   private client: OpenAI;
+  /**
+   * Hosted `api.openai.com` uses the [Responses API](https://developers.openai.com/api/docs/quickstart)
+   * so newer models (e.g. GPT-5.x / `o*` reasoning) work; custom `baseURL` stacks stay on chat completions.
+   */
+  private readonly useHostedResponsesApi: boolean;
 
   /**
    * @param apiKey - OpenAI API key, or a placeholder like `ollama` when using a local `baseURL`
@@ -20,6 +25,7 @@ export class OpenAIClient implements LlmClient {
   constructor(apiKey: string, model: string, options?: OpenAIClientOptions) {
     this.model = model;
     const baseURL = options?.baseURL?.trim();
+    this.useHostedResponsesApi = baseURL === undefined || baseURL === "";
     const label = options?.providerLabel?.trim();
     if (label) {
       this.provider = label;
@@ -38,6 +44,16 @@ export class OpenAIClient implements LlmClient {
 
   async complete(systemPrompt: string, userMessage: string): Promise<string> {
     try {
+      if (this.useHostedResponsesApi) {
+        const response = await this.client.responses.create({
+          model: this.model,
+          instructions: systemPrompt,
+          input: userMessage,
+          max_output_tokens: 4096,
+        });
+        return response.output_text ?? "";
+      }
+
       const response = await this.client.chat.completions.create({
         model: this.model,
         max_tokens: 1024,

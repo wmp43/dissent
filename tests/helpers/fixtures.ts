@@ -12,6 +12,7 @@ export function minimalEnv(overrides: Partial<EnvConfig> = {}): EnvConfig {
     defaultOpenaiModel: "gpt-test",
     defaultJudgeModel: "judge-test",
     maxRounds: 4,
+    verboseLlm: false,
     ...overrides,
   };
 }

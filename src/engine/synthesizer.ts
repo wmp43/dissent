@@ -1,6 +1,13 @@
 import type { LlmClient } from "../clients/types.js";
 import type { Round, Synthesis } from "../types/debate.js";
+import { logLlmCallStart, logLlmResponse } from "../logging/llm-trace.js";
 import { makeJudgeSystemPrompt, formatDebateForJudge } from "./prompts.js";
+
+export type SynthesizeTraceOptions = {
+  verboseLlm: boolean;
+  judgeStep: number;
+  totalLlmCalls: number;
+};
 
 interface SynthesisResult {
   synthesis: Synthesis;
@@ -65,26 +72,44 @@ function normalizeSynthesisResult(parsed: unknown, rawFallback: string): Synthes
 export async function synthesize(
   judge: LlmClient,
   question: string,
-  rounds: Round[]
+  rounds: Round[],
+  trace?: SynthesizeTraceOptions
 ): Promise<SynthesisResult> {
   const systemPrompt = makeJudgeSystemPrompt();
   const userMessage = formatDebateForJudge(question, rounds);
 
+  const v = trace?.verboseLlm === true;
+  if (v && trace) {
+    logLlmCallStart(
+      v,
+      `LLM ${trace.judgeStep}/${trace.totalLlmCalls} · Judge · synthesis · ${judge.provider}/${judge.model}`
+    );
+  }
+
   const raw = await judge.complete(systemPrompt, userMessage);
+  logLlmResponse(v, "Judge · raw response (excerpt)", raw, 720);
+
   const cleaned = stripJsonFences(raw);
 
   try {
     const parsed: unknown = JSON.parse(cleaned);
-    return normalizeSynthesisResult(parsed, raw);
+    const out = normalizeSynthesisResult(parsed, raw);
+    logLlmResponse(v, "Judge · parsed summary", out.synthesis.summary);
+    if (out.synthesis.recommendation.trim().length > 0) {
+      logLlmResponse(v, "Judge · parsed recommendation", out.synthesis.recommendation);
+    }
+    return out;
   } catch {
-    return {
+    const fallback = {
       synthesis: {
         summary: raw,
         recommendation: "Could not parse structured output",
-        confidence: "low",
+        confidence: "low" as const,
       },
       disagreements: [],
       consensusPoints: [],
     };
+    logLlmResponse(v, "Judge · fallback (unparsed)", raw);
+    return fallback;
   }
 }

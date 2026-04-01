@@ -12,7 +12,10 @@
     "dev": "tsx src/index.ts",
     "lint": "eslint src/",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:ci": "npm run lint && npm run test && npm run build",
+    "test:live": "RUN_LIVE_INFERENCE=1 vitest run tests/integration/live-inference.test.ts",
+    "test:live:log": "RUN_LIVE_INFERENCE=1 vitest run tests/integration/live-inference.test.ts 2>&1 | tee live-run.log"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.30.0",
@@ -24,6 +27,7 @@
     "@eslint/js": "^9.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
+    "dotenv": "^16.4.5",
     "eslint": "^9.0.0",
     "tsup": "^8.0.0",
     "tsx": "^4.0.0",

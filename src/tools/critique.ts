@@ -4,6 +4,7 @@ import type { CritiqueResult } from "../types/debate.js";
 import { ValidationError } from "../types/errors.js";
 import { OpenAIClient } from "../clients/openai.js";
 import { makeCritiqueSystemPrompt } from "../engine/prompts.js";
+import { logLlmCallStart, logLlmResponse } from "../logging/llm-trace.js";
 
 function stripJsonFences(text: string): string {
   return text.replace(/```json?\n?|```/g, "").trim();
@@ -60,6 +61,14 @@ export async function handleCritique(rawArgs: unknown, config: EnvConfig): Promi
   const systemPrompt = makeCritiqueSystemPrompt();
   const userMessage = buildCritiqueUserMessage(input);
 
+  const v = config.verboseLlm;
+  logLlmCallStart(v, `LLM 1/1 · Critique · ${client.provider}/${client.model}`);
   const raw = await client.complete(systemPrompt, userMessage);
-  return parseCritiqueResponse(raw, input);
+  logLlmResponse(v, "Critique · raw response (excerpt)", raw, 720);
+  const out = parseCritiqueResponse(raw, input);
+  if (v) {
+    logLlmResponse(v, "Critique · parsed critique", out.critique);
+    logLlmResponse(v, "Critique · parsed revisedVersion", out.revisedVersion);
+  }
+  return out;
 }
