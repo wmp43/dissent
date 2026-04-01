@@ -12,5 +12,13 @@ export const CritiqueInputSchema = z.object({
   context: z.string().optional().describe("Additional context"),
 });
 
+export const DebateStartInputSchema = DebateInputSchema;
+
+export const DebateNextInputSchema = z.object({
+  sessionId: z.string().min(1).describe("Session id returned by debate_start"),
+});
+
 export type DebateInput = z.infer<typeof DebateInputSchema>;
 export type CritiqueInput = z.infer<typeof CritiqueInputSchema>;
+export type DebateStartInput = z.infer<typeof DebateStartInputSchema>;
+export type DebateNextInput = z.infer<typeof DebateNextInputSchema>;

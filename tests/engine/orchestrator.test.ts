@@ -73,4 +73,28 @@ describe("Orchestrator", () => {
     await expect(orchestrator.runDebate(bad as DebateInput)).rejects.toThrow(ValidationError);
     expect(mockA.complete).not.toHaveBeenCalled();
   });
+
+  it("supports stepwise session progression one call at a time", async () => {
+    const mockA = makeMockClient(["Initial from A.", "Rebuttal from A."]);
+    const mockB = makeMockClient(["Critique from B."]);
+    const mockJudge = makeMockClient([judgeJson], "judge-m");
+    const orchestrator = new Orchestrator(mockA, mockB, mockJudge);
+
+    let state = orchestrator.startDebateSession({
+      question: "Is this question long enough to pass validation?",
+      rounds: 1,
+      mode: "adversarial",
+    });
+
+    expect(state.phase).toBe("initial");
+    state = await orchestrator.advanceDebateSession(state);
+    expect(state.phase).toBe("critique");
+    state = await orchestrator.advanceDebateSession(state);
+    expect(state.phase).toBe("rebuttal");
+    state = await orchestrator.advanceDebateSession(state);
+    expect(state.phase).toBe("judge");
+    state = await orchestrator.advanceDebateSession(state);
+    expect(state.phase).toBe("done");
+    expect(state.result?.synthesis.summary).toBe("Both sides argued.");
+  });
 });

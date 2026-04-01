@@ -2,8 +2,28 @@ import type { LlmClient } from "../clients/types.js";
 import type { DebateInput } from "../types/tools.js";
 import type { Argument, DebateResult, Round } from "../types/debate.js";
 import { ValidationError } from "../types/errors.js";
+import { logLlmCallStart, logLlmResponse } from "../logging/llm-trace.js";
 import { makeAnalystSystemPrompt } from "./prompts.js";
 import { synthesize } from "./synthesizer.js";
+
+export type OrchestratorOptions = {
+  verboseLlm?: boolean;
+};
+
+export type DebatePhase = "initial" | "critique" | "rebuttal" | "judge" | "done";
+
+export type DebateSessionState = {
+  input: DebateInput;
+  startedAtMs: number;
+  rounds: Round[];
+  currentRoundNumber: number;
+  currentInitial?: Argument;
+  currentCritique?: Argument;
+  phase: DebatePhase;
+  llmStep: number;
+  totalLlmCalls: number;
+  result?: DebateResult;
+};
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -60,91 +80,156 @@ Provide your **rebuttal** as Analyst A.`;
 
 export class Orchestrator {
   constructor(
-    private analystA: LlmClient, // Claude
-    private analystB: LlmClient, // GPT
-    private judge: LlmClient // Used for synthesis (can be either or )
+    private analystA: LlmClient,
+    private analystB: LlmClient,
+    private judge: LlmClient,
+    private readonly options: OrchestratorOptions = {}
   ) {}
 
-  async runDebate(input: DebateInput): Promise<DebateResult> {
-    const startTime = Date.now();
-
+  startDebateSession(input: DebateInput): DebateSessionState {
     const { rounds: nRounds } = input;
     if (!Number.isInteger(nRounds) || nRounds < 1 || nRounds > 4) {
       throw new ValidationError(`rounds must be an integer from 1 to 4, got ${String(nRounds)}`);
     }
+    return {
+      input,
+      startedAtMs: Date.now(),
+      rounds: [],
+      currentRoundNumber: 1,
+      phase: "initial",
+      llmStep: 0,
+      totalLlmCalls: nRounds * 3 + 1,
+    };
+  }
 
-    const rounds: Round[] = [];
-    // This is for number rounds
-    // TODO: Implement infinite rounds 
-    //  Like the pro max version of debate. 
-    // at every 3 cycles you should probably summarize the debate
-    // every 2 cycles you should ask the judge if agreement has been reached
-    for (let r = 1; r <= nRounds; r++) {
-      const previousRound = r > 1 ? rounds[r - 2] : undefined;
-      const initialUser = buildInitialUserMessage(input, r, previousRound);
+  async advanceDebateSession(state: DebateSessionState): Promise<DebateSessionState> {
+    if (state.phase === "done") {
+      return state;
+    }
 
+    const verbose = this.options.verboseLlm === true;
+    const traceStart = (label: string, client: LlmClient) => {
+      state.llmStep += 1;
+      logLlmCallStart(
+        verbose,
+        `LLM ${state.llmStep}/${state.totalLlmCalls} · ${label} · ${client.provider}/${client.model}`
+      );
+    };
+
+    if (state.phase === "initial") {
+      const r = state.currentRoundNumber;
+      const previousRound = r > 1 ? state.rounds[r - 2] : undefined;
+      const initialUser = buildInitialUserMessage(state.input, r, previousRound);
+
+      traceStart(`Round ${r}/${state.input.rounds} · Analyst A · initial`, this.analystA);
       const initialText = await this.analystA.complete(
-        makeAnalystSystemPrompt("A", input.mode),
+        makeAnalystSystemPrompt("A", state.input.mode),
         initialUser
       );
-      const initial: Argument = {
+      logLlmResponse(verbose, `Round ${r} · Analyst A · initial`, initialText);
+      state.currentInitial = {
         analystId: "A",
         role: "initial",
         content: initialText.trim(),
         timestamp: nowIso(),
       };
+      state.phase = "critique";
+      return state;
+    }
 
-      const critiqueUser = buildCritiqueUserMessage(input, initial);
+    if (state.phase === "critique") {
+      if (!state.currentInitial) {
+        throw new ValidationError("session state invalid: missing initial argument for critique step");
+      }
+      const r = state.currentRoundNumber;
+      const critiqueUser = buildCritiqueUserMessage(state.input, state.currentInitial);
+      traceStart(`Round ${r}/${state.input.rounds} · Analyst B · critique`, this.analystB);
       const critiqueText = await this.analystB.complete(
-        makeAnalystSystemPrompt("B", input.mode),
+        makeAnalystSystemPrompt("B", state.input.mode),
         critiqueUser
       );
-      const critique: Argument = {
+      logLlmResponse(verbose, `Round ${r} · Analyst B · critique`, critiqueText);
+      state.currentCritique = {
         analystId: "B",
         role: "critique",
         content: critiqueText.trim(),
         timestamp: nowIso(),
       };
+      state.phase = "rebuttal";
+      return state;
+    }
 
-      const rebuttalUser = buildRebuttalUserMessage(input, critique);
+    if (state.phase === "rebuttal") {
+      if (!state.currentInitial || !state.currentCritique) {
+        throw new ValidationError("session state invalid: missing initial/critique for rebuttal step");
+      }
+      const r = state.currentRoundNumber;
+      const rebuttalUser = buildRebuttalUserMessage(state.input, state.currentCritique);
+      traceStart(`Round ${r}/${state.input.rounds} · Analyst A · rebuttal`, this.analystA);
       const rebuttalText = await this.analystA.complete(
-        makeAnalystSystemPrompt("A", input.mode),
+        makeAnalystSystemPrompt("A", state.input.mode),
         rebuttalUser
       );
+      logLlmResponse(verbose, `Round ${r} · Analyst A · rebuttal`, rebuttalText);
       const rebuttal: Argument = {
         analystId: "A",
         role: "rebuttal",
         content: rebuttalText.trim(),
         timestamp: nowIso(),
       };
-
-      rounds.push({
+      state.rounds.push({
         roundNumber: r,
-        initial,
-        critique,
+        initial: state.currentInitial,
+        critique: state.currentCritique,
         rebuttal,
       });
+      state.currentInitial = undefined;
+      state.currentCritique = undefined;
+
+      if (r < state.input.rounds) {
+        state.currentRoundNumber += 1;
+        state.phase = "initial";
+      } else {
+        state.phase = "judge";
+      }
+      return state;
     }
 
     const { synthesis, disagreements, consensusPoints } = await synthesize(
       this.judge,
-      input.question,
-      rounds
+      state.input.question,
+      state.rounds,
+      verbose
+        ? { verboseLlm: true, judgeStep: state.totalLlmCalls, totalLlmCalls: state.totalLlmCalls }
+        : undefined
     );
-
-    return {
-      question: input.question,
-      mode: input.mode,
-      rounds,
+    state.llmStep = state.totalLlmCalls;
+    state.result = {
+      question: state.input.question,
+      mode: state.input.mode,
+      rounds: state.rounds,
       synthesis,
       disagreements,
       consensusPoints,
       metadata: {
-        totalDurationMs: Date.now() - startTime,
+        totalDurationMs: Date.now() - state.startedAtMs,
         modelA: this.analystA.model,
         modelB: this.analystB.model,
         judgeModel: this.judge.model,
       },
     };
+    state.phase = "done";
+    return state;
+  }
+
+  async runDebate(input: DebateInput): Promise<DebateResult> {
+    let state = this.startDebateSession(input);
+    while (state.phase !== "done") {
+      state = await this.advanceDebateSession(state);
+    }
+    if (!state.result) {
+      throw new ValidationError("session completed without result");
+    }
+    return state.result;
   }
 }

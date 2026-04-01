@@ -1,4 +1,5 @@
 import type { CritiqueResult, DebateResult } from "../types/debate.js";
+import type { DebateStepResult } from "../tools/debate.js";
 
 function bulletList(items: string[], emptyLabel: string): string {
   if (items.length === 0) {
@@ -119,4 +120,29 @@ FULL RESULT (JSON)
 ------------------
 ${JSON.stringify(result, null, 2)}
 `.trim();
+}
+
+export function formatDebateStepResultForTool(result: DebateStepResult): string {
+  const header = `
+DEBATE SESSION
+==============
+Session: ${result.sessionId}
+Status: ${result.status}
+Phase: ${result.phase}
+Round: ${result.round}
+Progress: ${result.llmProgress.completed}/${result.llmProgress.total}
+`.trim();
+
+  if (result.status === "complete" && result.result) {
+    return `${header}
+
+---
+FINAL RESULT
+------------
+${formatDebateResultForTool(result.result)}`;
+  }
+
+  return `${header}
+
+Next step: call debate_next with the same sessionId.`;
 }
