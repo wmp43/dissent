@@ -144,5 +144,6 @@ ${formatDebateResultForTool(result.result)}`;
 
   return `${header}
 
-Next step: call debate_next with the same sessionId.`;
+Next step: call debate_next with the same sessionId.
+If you are an MCP client or assistant, continue calling debate_next until status is complete.`;
 }

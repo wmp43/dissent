@@ -18,6 +18,13 @@ export class OpenAIClient implements LlmClient {
    * so newer models (e.g. GPT-5.x / `o*` reasoning) work; custom `baseURL` stacks stay on chat completions.
    */
   private readonly useHostedResponsesApi: boolean;
+  private static readonly HOSTED_MAX_OUTPUT_TOKENS = 1200;
+
+  /** Models that accept Responses API `reasoning` controls (lower effort = faster). */
+  private static shouldAttachReasoningLowLatency(model: string): boolean {
+    const m = model.toLowerCase();
+    return m.includes("gpt-5") || m.startsWith("o") || m.includes("o3");
+  }
 
   /**
    * @param apiKey - OpenAI API key, or a placeholder like `ollama` when using a local `baseURL`
@@ -45,12 +52,21 @@ export class OpenAIClient implements LlmClient {
   async complete(systemPrompt: string, userMessage: string): Promise<string> {
     try {
       if (this.useHostedResponsesApi) {
-        const response = await this.client.responses.create({
+        const body: Parameters<OpenAI["responses"]["create"]>[0] = {
           model: this.model,
           instructions: systemPrompt,
           input: userMessage,
-          max_output_tokens: 4096,
-        });
+          max_output_tokens: OpenAIClient.HOSTED_MAX_OUTPUT_TOKENS,
+          /** Avoid server-side retention for MCP tool calls (slightly less work). */
+          store: false,
+        };
+        if (OpenAIClient.shouldAttachReasoningLowLatency(this.model)) {
+          body.reasoning = {
+            effort: "low",
+            summary: "concise",
+          };
+        }
+        const response = await this.client.responses.create(body);
         return response.output_text ?? "";
       }
 

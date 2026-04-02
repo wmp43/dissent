@@ -46,7 +46,8 @@ describe("OpenAIClient", () => {
         model: "gpt-test",
         instructions: "sys",
         input: "user",
-        max_output_tokens: 4096,
+        max_output_tokens: 1200,
+        store: false,
       })
     );
     expect(mockChatCreate).not.toHaveBeenCalled();
@@ -91,5 +92,18 @@ describe("OpenAIClient", () => {
     mockResponsesCreate.mockRejectedValue(new Error("timeout"));
     const client = new OpenAIClient("sk", "gpt-test");
     await expect(client.complete("s", "u")).rejects.toThrow(ProviderError);
+  });
+
+  it("passes low-latency reasoning options for gpt-5.x hosted models", async () => {
+    mockResponsesCreate.mockResolvedValue({ output_text: "ok" });
+    const client = new OpenAIClient("sk", "gpt-5.4-mini");
+    await client.complete("sys", "user");
+    expect(mockResponsesCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gpt-5.4-mini",
+        store: false,
+        reasoning: { effort: "low", summary: "concise" },
+      })
+    );
   });
 });

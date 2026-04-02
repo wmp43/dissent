@@ -1,6 +1,11 @@
 import { GEMINI_OPENAI_COMPAT_BASE, type EnvConfig } from "../config/env.js";
 import type { LlmClient } from "../clients/types.js";
-import { DebateInputSchema, DebateNextInputSchema, DebateStartInputSchema } from "../types/tools.js";
+import {
+  DebateAutoInputSchema,
+  DebateInputSchema,
+  DebateNextInputSchema,
+  DebateStartInputSchema,
+} from "../types/tools.js";
 import type { DebateResult } from "../types/debate.js";
 import { ValidationError } from "../types/errors.js";
 import { AnthropicClient } from "../clients/anthropic.js";
@@ -100,6 +105,23 @@ export function handleDebateStart(rawArgs: unknown, config: EnvConfig): DebateSt
       total: state.totalLlmCalls,
     },
   };
+}
+
+export function handleDebateAuto(rawArgs: unknown, config: EnvConfig): DebateStepResult {
+  const parsed = DebateAutoInputSchema.safeParse(rawArgs);
+  if (!parsed.success) {
+    throw new ValidationError(parsed.error.issues.map((i) => i.message).join(", "));
+  }
+  // Plain-language entrypoint: inject stepwise-friendly defaults.
+  return handleDebateStart(
+    {
+      question: parsed.data.topic,
+      context: parsed.data.context,
+      rounds: 2,
+      mode: "adversarial",
+    },
+    config
+  );
 }
 
 export async function handleDebateNext(rawArgs: unknown, config: EnvConfig): Promise<DebateStepResult> {

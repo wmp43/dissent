@@ -115,7 +115,7 @@ export function loadEnvConfig(): EnvConfig {
       "DISSENT_ANTHROPIC_MODEL",
       "claude-sonnet-4-20250514"
     ),
-    defaultOpenaiModel: readOptional("DISSENT_OPENAI_MODEL", "gpt-4o"),
+    defaultOpenaiModel: readOptional("DISSENT_OPENAI_MODEL", "gpt-5.4-mini"),
     defaultJudgeModel: readDefaultJudgeModel(judgeGeminiApiKey.trim() !== ""),
     maxRounds: parseMaxRounds(process.env.DISSENT_MAX_ROUNDS),
     verboseLlm: isVerboseLlmEnv(process.env.DISSENT_VERBOSE_LLM),

@@ -25,7 +25,7 @@ describe("loadEnvConfig", () => {
     expect(cfg.anthropicApiKey).toBe("sk-ant");
     expect(cfg.openaiApiKey).toBe("sk-openai");
     expect(cfg.defaultAnthropicModel).toBe("claude-sonnet-4-20250514");
-    expect(cfg.defaultOpenaiModel).toBe("gpt-4o");
+    expect(cfg.defaultOpenaiModel).toBe("gpt-5.4-mini");
     expect(cfg.defaultJudgeModel).toBe("claude-sonnet-4-20250514");
     expect(cfg.maxRounds).toBe(4);
     expect(cfg.verboseLlm).toBe(false);

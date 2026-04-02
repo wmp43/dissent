@@ -17,7 +17,7 @@ vi.mock("../../src/engine/orchestrator.js", () => ({
   }),
 }));
 
-import { handleDebateNext, handleDebateStart } from "../../src/tools/debate.js";
+import { handleDebateAuto, handleDebateNext, handleDebateStart } from "../../src/tools/debate.js";
 
 describe("stepwise debate handlers", () => {
   beforeEach(() => {
@@ -75,6 +75,41 @@ describe("stepwise debate handlers", () => {
   it("throws for unknown session ids", async () => {
     await expect(handleDebateNext({ sessionId: "missing" }, minimalEnv())).rejects.toThrow(
       ValidationError
+    );
+  });
+
+  it("maps plain-language debate_auto input to a stepwise session", () => {
+    const startedState: DebateSessionState = {
+      input: {
+        question: "Should we do this in plain language?",
+        rounds: 2,
+        mode: "adversarial",
+      },
+      startedAtMs: Date.now(),
+      rounds: [],
+      currentRoundNumber: 1,
+      phase: "initial",
+      llmStep: 0,
+      totalLlmCalls: 7,
+    };
+    startDebateSessionMock.mockReturnValue(startedState);
+
+    const out = handleDebateAuto(
+      {
+        topic: "Should we do this in plain language?",
+        context: "Team has tight deadlines.",
+      },
+      minimalEnv()
+    );
+
+    expect(out.status).toBe("in_progress");
+    expect(startDebateSessionMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        question: "Should we do this in plain language?",
+        context: "Team has tight deadlines.",
+        rounds: 2,
+        mode: "adversarial",
+      })
     );
   });
 

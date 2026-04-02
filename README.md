@@ -63,7 +63,7 @@ Configuration is read from **`process.env`** only (no bundled `dotenv`). MCP hos
 | Variable | Default | Purpose |
 | -------- | ------- | ------- |
 | `DISSENT_ANTHROPIC_MODEL` | `claude-sonnet-4-20250514` | Model id for Analyst A |
-| `DISSENT_OPENAI_MODEL` | `gpt-4o` | Model id for Analyst B (and critique). Hosted OpenAI calls use the [Responses API](https://developers.openai.com/api/docs/quickstart); OpenAI-compatible `baseURL` judges still use chat completions. |
+| `DISSENT_OPENAI_MODEL` | `gpt-5.4-mini` | Model id for Analyst B (and critique). Hosted OpenAI calls use the [Responses API](https://developers.openai.com/api/docs/quickstart); OpenAI-compatible `baseURL` judges still use chat completions. |
 | `DISSENT_JUDGE_MODEL` | See below | Optional override: judge model id for **any** judge backend (wins over `DISSENT_GOOGLE_MODEL`) |
 | `DISSENT_GOOGLE_MODEL` | _(see below)_ | When a Gemini key is set and `DISSENT_JUDGE_MODEL` is empty: judge’s Gemini model id (e.g. `gemini-2.5-flash`). If unset, defaults to `gemini-2.5-flash`. |
 | `DISSENT_MAX_ROUNDS` | `4` | Env-level cap (1–4); per-request `rounds` are also validated in the tool schema |

@@ -6,12 +6,13 @@ import {
   formatDebateStepResultForTool,
 } from "./formatting/tool-text.js";
 import {
+  DebateAutoInputSchema,
   DebateInputSchema,
   CritiqueInputSchema,
   DebateStartInputSchema,
   DebateNextInputSchema,
 } from "./types/tools.js";
-import { handleDebate, handleDebateNext, handleDebateStart } from "./tools/debate.js";
+import { handleDebate, handleDebateAuto, handleDebateNext, handleDebateStart } from "./tools/debate.js";
 import { handleCritique } from "./tools/critique.js";
 
 /**
@@ -27,7 +28,8 @@ export function createServer(config: EnvConfig): McpServer {
   server.registerTool(
     "debate",
     {
-      description: "Run a structured adversarial debate between two LLMs on a question",
+      description:
+        "Run a full cross-model debate in one call. Prefer this only when long tool calls are safe; for timeout-constrained hosts, use debate_start then debate_next until complete.",
       inputSchema: DebateInputSchema,
     },
     async (args) => {
@@ -42,7 +44,7 @@ export function createServer(config: EnvConfig): McpServer {
     "debate_start",
     {
       description:
-        "Start a stepwise debate session for timeout-constrained clients; call debate_next until complete",
+        "Primary entrypoint for debates on timeout-constrained hosts (for example Claude Desktop). Start a cross-model debate session and then call debate_next until status is complete.",
       inputSchema: DebateStartInputSchema,
     },
     async (args) => {
@@ -54,9 +56,25 @@ export function createServer(config: EnvConfig): McpServer {
   );
 
   server.registerTool(
+    "debate_auto",
+    {
+      description:
+        "Simple/plain-language debate entrypoint. Converts a topic into a stepwise debate_start session with sensible defaults for timeout-constrained hosts.",
+      inputSchema: DebateAutoInputSchema,
+    },
+    async (args) => {
+      const result = handleDebateAuto(args, config);
+      return {
+        content: [{ type: "text", text: formatDebateStepResultForTool(result) }],
+      };
+    }
+  );
+
+  server.registerTool(
     "debate_next",
     {
-      description: "Advance one step in a debate_start session (one LLM call max per invocation)",
+      description:
+        "Advance a debate_start session by one step (one model call max). Keep calling with the same sessionId until status is complete.",
       inputSchema: DebateNextInputSchema,
     },
     async (args) => {
